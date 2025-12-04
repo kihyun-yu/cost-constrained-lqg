@@ -1,0 +1,14 @@
+num_simul: 10
+verbose: true
+unknown_trans: true
+running_seed:
+init_trans: set_zero
+beta: 1.0
+mu: 0.02
+lam: 1.0
+T: 200
+T_warmup: 10
+load_env_dir: ./envs
+load_env_file_name: dx4_du2_seed42_sigmaSquare0.1
+save_dir: ./figures/
+save_file_name: unknown_T{T}_warm{T_warmup}

@@ -8,65 +8,10 @@ from tqdm import tqdm
 tqdm.disable = True
 
 
-class SDP:
-    def __init__(self, clqr):
-        self.clqr = deepcopy(clqr)
-        self.dx = self.clqr.dx
-        self.du = self.clqr.du
-        self.A = self.clqr.A
-        self.B = self.clqr.B
-        self.Qf = self.clqr.Qf
-        self.Rf = self.clqr.Rf
-        self.Qg = self.clqr.Qg
-        self.Rg = self.clqr.Rg
-        self.cov = self.clqr.cov
-        self.b = self.clqr.b
-        self.K = None
-
-    def solve_sdp(self):
-
-        d = self.dx + self.du
-        Sigma = cp.Variable((d, d), symmetric=True)
-
-        Sigma_xx = Sigma[: self.dx, : self.dx]
-        Sigma_xu = Sigma[: self.dx, self.dx :]
-        Sigma_ux = Sigma[self.dx :, : self.dx]
-        Sigma_uu = Sigma[self.dx :, self.dx :]
-
-        # Constraints
-        constraints = [
-            cp.trace(self.Qg @ Sigma_xx) + cp.trace(self.Rg @ Sigma_uu) <= self.b,
-            Sigma_xx
-            == cp.bmat([[self.A, self.B]]) @ Sigma @ cp.bmat([[self.A.T], [self.B.T]])
-            + self.cov,
-            Sigma >> 0,
-        ]
-
-        objective = cp.Minimize(
-            cp.trace(self.Qf @ Sigma_xx) + cp.trace(self.Rf @ Sigma_uu)
-        )
-        prob = cp.Problem(objective, constraints)
-        prob.solve(solver=cp.SCS, verbose=False)
-
-        if prob.status not in ["infeasible", "unbounded"]:
-            self.Sigma_opt = Sigma.value
-            self.K = self.Sigma_opt[: self.dx, self.dx :].T @ np.linalg.inv(
-                self.Sigma_opt[: self.dx, : self.dx]
-            )
-            return self.K
-        else:
-            raise ValueError("SDP problem is infeasible or unbounded")
-
-    def pi(self, x):
-        if self.K is None:
-            raise ValueError("SDP has not been solved yet")
-        else:
-            return self.K @ x
-
-
 class OnlineSDP:
-    def __init__(self, clqr, beta, mu, lam, init_tran=None):
+    def __init__(self, clqr, beta, mu, lam, unknown_trans=None, init_tran=None):
         self.clqr = deepcopy(clqr)
+        self.unknown_trans = unknown_trans
         self.dx = self.clqr.dx
         self.du = self.clqr.du
 
@@ -85,6 +30,10 @@ class OnlineSDP:
         elif init_tran == "set_random":
             self.A0 = np.random.standard_normal(self.A.shape)
             self.B0 = np.random.standard_normal(self.B.shape)
+
+        elif init_tran is None and unknown_trans == False:
+            self.A0 = self.A
+            self.B0 = self.B
 
         else:
             raise ValueError("Undefined input for init_tran")
@@ -109,26 +58,28 @@ class OnlineSDP:
         self.xs = []
 
         self.log_est_error_AB = []
-        self.log_avg_K_loss = []
-        self.log_avg_K_cost = []
+        self.log_K_loss = []
+        self.log_K_cost = []
 
     def estimate_AB(self):
-        if len(self.xs) == 0 or len(self.zs) == 0:
+        if self.unknown_trans == False:
+            return self.A, self.B
+        elif len(self.xs) == 0 or len(self.zs) == 0:
             return self.A0, self.B0
-        X = np.column_stack(self.xs)
-        Z = np.column_stack(self.zs)
-        M0 = np.hstack([self.A0, self.B0])
+        else:
+            X = np.column_stack(self.xs)
+            Z = np.column_stack(self.zs)
+            M0 = np.hstack([self.A0, self.B0])
 
-        M = (X @ Z.T + self.beta * self.lam * M0) @ np.linalg.inv(
-            Z @ Z.T + self.beta * self.lam * np.eye(self.dx + self.du)
-        )
-        A = M[:, : self.dx]
-        B = M[:, self.dx :]
+            M = (X @ Z.T + self.beta * self.lam * M0) @ np.linalg.inv(
+                Z @ Z.T + self.beta * self.lam * np.eye(self.dx + self.du)
+            )
+            A = M[:, : self.dx]
+            B = M[:, self.dx :]
 
-        return A, B
+            return A, B
 
     def get_stable_policy(self):
-
         for _ in range(10000):
             K = np.random.standard_normal((self.du, self.dx))
             if spectral_radius(self.A + self.B @ K) < 1:
@@ -175,23 +126,24 @@ class OnlineSDP:
         V_inv = np.linalg.inv(V)
 
         # Optimistic Constraints
-        constraints = [
-            cp.trace(self.Qg @ Sigma_xx) + cp.trace(self.Rg @ Sigma_uu) <= self.b,
-            Sigma_xx
-            >> cp.bmat([[A, B]]) @ Sigma @ cp.bmat([[A.T], [B.T]])
-            + self.cov
-            - self.mu * cp.trace(Sigma.T @ V_inv) * np.eye(self.dx),
-            Sigma >> 0,
-        ]
+        if self.unknown_trans == True:
+            constraints = [
+                cp.trace(self.Qg @ Sigma_xx) + cp.trace(self.Rg @ Sigma_uu) <= self.b,
+                Sigma_xx
+                >> cp.bmat([[A, B]]) @ Sigma @ cp.bmat([[A.T], [B.T]])
+                + self.cov
+                - self.mu * cp.trace(Sigma.T @ V_inv) * np.eye(self.dx),
+                Sigma >> 0,
+            ]
 
         # Non-optimistic Contraints
-        # constraints = [
-        #     cp.trace(self.Qg @ Sigma_xx) + cp.trace(self.Rg @ Sigma_uu) <= self.b,
-        #     Sigma_xx
-        #     == cp.bmat([[A, B]]) @ Sigma @ cp.bmat([[A.T], [B.T]])
-        #     + self.cov,
-        #     Sigma >> 0,
-        # ]
+        if self.unknown_trans == False:
+            constraints = [
+                cp.trace(self.Qg @ Sigma_xx) + cp.trace(self.Rg @ Sigma_uu) <= self.b,
+                Sigma_xx
+                == cp.bmat([[A, B]]) @ Sigma @ cp.bmat([[A.T], [B.T]]) + self.cov,
+                Sigma >> 0,
+            ]
 
         objective = cp.Minimize(
             cp.trace(self.Qf @ Sigma_xx) + cp.trace(self.Rf @ Sigma_uu)
@@ -210,7 +162,6 @@ class OnlineSDP:
             return None
 
     def run(self, T, T_warmup, verbose=True):
-        avg_K = np.zeros_like(self.clqr.K)
         V = self.lam * np.eye(self.dx + self.du)
         det_init_epoch = self.lam
 
@@ -224,7 +175,7 @@ class OnlineSDP:
             else:
                 detV = np.linalg.det(V)
                 if (
-                    t == 1 or detV > det_init_epoch * 2
+                    t == (T_warmup + 1) or detV > det_init_epoch * 2
                 ):  # if new information arrives sufficiently, then update estimates
                     if t == 1:
                         A, B = self.A0, self.B0
@@ -244,16 +195,18 @@ class OnlineSDP:
             est_error_AB = np.linalg.norm(A - self.A) + np.linalg.norm(B - self.B)
             self.log_est_error_AB.append(est_error_AB)
 
-            # log convergence of average policy
-            avg_K += K
-            avg_K_loss = eval_policy(
-                self.A, self.B, self.Qf, self.Rf, avg_K / t, self.cov
-            )
-            avg_K_cost = eval_policy(
-                self.A, self.B, self.Qg, self.Rg, avg_K / t, self.cov
-            )
-            self.log_avg_K_loss.append(avg_K_loss)
-            self.log_avg_K_cost.append(avg_K_cost)
+            # log convergence of policy
+            K
+            K_loss = eval_policy(self.A, self.B, self.Qf, self.Rf, K, self.cov)
+            K_cost = eval_policy(self.A, self.B, self.Qg, self.Rg, K, self.cov)
+            if K_loss == "unstable":
+                self.log_K_loss.append(self.log_K_loss[-1])
+            else:
+                self.log_K_loss.append(K_loss)
+            if K_cost == "unstable":
+                self.log_K_cost.append(self.log_K_cost[-1])
+            else:
+                self.log_K_cost.append(K_cost)
 
             # step
             self.step(K, self.x)

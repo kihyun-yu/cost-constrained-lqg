@@ -37,51 +37,35 @@ def main():
     with open(load_path, "rb") as f:
         clqr: CLQR = pickle.load(f)
 
-    # run offline algorithm
-    if config["transition"] == "known":
-        sdp = SDP(clqr)
-        sdp.solve_sdp()
-        print(
-            f"SDP Obj: {eval_policy(sdp.clqr.A, sdp.clqr.B, sdp.clqr.Qf, sdp.clqr.Rf, sdp.K, sdp.clqr.cov)}"
+    regrets = []
+    violations = []
+
+    logs_est_error_AB = []
+    logs_K_loss = []
+
+    for nth in range(config["num_simul"]):
+        np.random.seed(config["running_seed"][nth])
+        osdp = OnlineSDP(
+            clqr,
+            beta=config["beta"],
+            mu=config["mu"],
+            lam=config["lam"],
+            unknown_trans=config["unknown_trans"],
+            init_tran=config["init_trans"],
         )
+        osdp.run(T=config["T"], T_warmup=config["T_warmup"], verbose=config["verbose"])
 
-        print(
-            f"Spectral Radius: {max(np.abs(np.linalg.eigvals(clqr.A + clqr.B @ clqr.K)))}"
-        )
+        regrets.append(osdp.regret)
+        violations.append(osdp.violation)
+        logs_est_error_AB.append(osdp.log_est_error_AB)
+        logs_K_loss.append(osdp.log_K_loss)
 
-    # run online algorithm
-    elif config["transition"] == "unknown":
-
-        regrets = []
-        violations = []
-
-        logs_est_error_AB = []
-        logs_avg_K_loss = []
-
-        for nth in range(config["num_simul"]):
-            np.random.seed(config["running_seed"][nth])
-            osdp = OnlineSDP(
-                clqr,
-                beta=config["beta"],
-                mu=config["mu"],
-                lam=config["lam"],
-                init_tran=config["init_trans"],
-            )
-            osdp.run(
-                T=config["T"], T_warmup=config["T_warmup"], verbose=config["verbose"]
-            )
-
-            regrets.append(osdp.regret)
-            violations.append(osdp.violation)
-            logs_est_error_AB.append(osdp.log_est_error_AB)
-            logs_avg_K_loss.append(osdp.log_avg_K_loss)
-
-        # plot
-        fpath = os.path.join(config["save_dir"], config["save_file_name"])
-        plot(regrets, "Cumulative Regret", fpath)
-        plot(violations, "Cumulative Violations", fpath)
-        plot(logs_est_error_AB, "Estimation Error", fpath)
-        plot(logs_avg_K_loss, "Convergence", fpath)
+    # plot
+    fpath = os.path.join(config["save_dir"], config["save_file_name"])
+    plot(regrets, "Cumulative Regret", fpath)
+    plot(violations, "Cumulative Violations", fpath)
+    plot(logs_est_error_AB, "Estimation Error", fpath)
+    plot(logs_K_loss, "Convergence", fpath)
 
 
 if __name__ == "__main__":

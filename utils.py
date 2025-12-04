@@ -25,8 +25,8 @@ def eval_policy(A, B, Q, R, K, cov):
     # avg_loss = avg_loss.item()
 
     # if the input policy is not stable, return inf
-    if spectral_radius(A + B @ K) >= (1.0 - 1e-5):
-        return 1e9
+    if spectral_radius(A + B @ K) >= 1.0:
+        return "unstable"
 
     conv = False
     X = np.zeros((A.shape[0], A.shape[0]))
@@ -42,7 +42,7 @@ def eval_policy(A, B, Q, R, K, cov):
     if conv:
         return avg_loss_2
     else:
-        return 1e9
+        raise ValueError("Unidentified error in utils.eval_policy")
 
 
 def get_dare(A, B, Q, R):
