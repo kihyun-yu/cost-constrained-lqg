@@ -196,7 +196,6 @@ class OnlineSDP:
             self.log_est_error_AB.append(est_error_AB)
 
             # log convergence of policy
-            K
             K_loss = eval_policy(self.A, self.B, self.Qf, self.Rf, K, self.cov)
             K_cost = eval_policy(self.A, self.B, self.Qg, self.Rg, K, self.cov)
             if K_loss == "unstable":
@@ -212,6 +211,16 @@ class OnlineSDP:
             self.step(K, self.x)
             z = self.zs[-1]
             V += (1 / self.beta) * np.outer(z, z)
+
+            if t == T_warmup + T:
+                self.last_obj = (
+                    eval_policy(
+                        K=self.K, A=self.A, B=self.B, Q=self.Qf, R=self.Rf, cov=self.cov
+                    ),
+                    eval_policy(
+                        K=self.K, A=self.A, B=self.B, Q=self.Qg, R=self.Rg, cov=self.cov
+                    ),
+                )
 
         self.regret = np.cumsum(self.regret)
         self.violation = np.cumsum(self.violation)

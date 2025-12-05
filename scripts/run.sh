@@ -6,5 +6,8 @@ python env.py \
     --save_dir "./envs"
 
 
-echo "Running low_dim..."
+echo "Running unknown transition ..."
 python main.py --config configs/unknown_warm.yaml
+
+echo "Running known transition ..."
+python main.py --config configs/known.yaml

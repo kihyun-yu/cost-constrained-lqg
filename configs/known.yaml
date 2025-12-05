@@ -1,12 +1,12 @@
-num_simul: 10
+num_simul: 1
 verbose: true
 unknown_trans: false
 running_seed: 
 init_trans: 
 beta: 1.0
-mu: 0.01
+mu: 1.0
 lam: 1.0
-T: 1000
+T: 1
 T_warmup: 0
 load_env_dir: ./envs
 load_env_file_name: dx4_du2_seed42_sigmaSquare0.1

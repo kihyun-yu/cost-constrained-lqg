@@ -60,6 +60,15 @@ def main():
         logs_est_error_AB.append(osdp.log_est_error_AB)
         logs_K_loss.append(osdp.log_K_loss)
 
+    # convergence results
+    print(
+        f"\n=== Convergence Results when transition is {'unknown' if config['unknown_trans'] else 'known'} ==="
+    )
+    print(f"Optimal Value Function: {osdp.opt_obj:.4f}")
+    print(f"Cost: {osdp.b:.4f}")
+    print(f"Value Function at last step: {osdp.last_obj[0]:.4f}")
+    print(f"Constraint Cost at last step: {osdp.last_obj[1]:.4f}\n")
+
     # plot
     fpath = os.path.join(config["save_dir"], config["save_file_name"])
     plot(regrets, "Cumulative Regret", fpath)
